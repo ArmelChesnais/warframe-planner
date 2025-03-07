@@ -12,15 +12,6 @@ export default[
     effects: { "The Hex": "complete" },
   },
   {
-    name: "The Duviri Paradox",
-    cost: 60,
-    once: true,
-    preconditions: {
-      "Uranus Junction": "complete",
-    },
-    effects: { "The Duviri Paradox": "complete" },
-  },
-  {
     name: "The Lotus Eaters",
     cost: 10,
     once: true,
@@ -36,6 +27,15 @@ export default[
       // "Heart of Deimos": "complete",
     },
     effects: { "Whispers in the Walls": "complete" },
+  },
+  {
+    name: "The Duviri Paradox",
+    cost: 60,
+    once: true,
+    preconditions: {
+      "Uranus Junction": "complete",
+    },
+    effects: { "The Duviri Paradox": "complete" },
   },
   {
     name: "The New War",

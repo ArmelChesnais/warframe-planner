@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
+// import Image from "next/image";
 
 // import { goalState } from "@/data/data";
 
-import type { State, Action, AStarReturnValue } from "@/data/dataHelpers";
+import type { State, AStarReturnValue } from "@/data/dataHelpers";
 import { aStarPlanReversedGenerator } from "@/data/dataHelpers";
 import actions from "@/data/data";
 import { itemMap } from "@/data/items";

@@ -1,7 +1,7 @@
 import React from "react";
 import Image from "next/image";
 
-import styles from "./test.module.scss";
+// import styles from "./test.module.scss";
 
 export default function Home() {
   return (

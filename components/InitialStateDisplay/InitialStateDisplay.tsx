@@ -105,11 +105,11 @@ type ItemEntryProps = {
   separator: boolean;
 }
 
-const ItemEntry:FC<ItemEntryProps> = memo(({
+function ItemEntry({
   item,
   onChange,
   separator,
-}) => {
+}:ItemEntryProps) {
   return <>
     <label className={styles["state-entry"]}>
       {item.name}:  
@@ -122,7 +122,7 @@ const ItemEntry:FC<ItemEntryProps> = memo(({
     </label>
     {separator ? <Separator /> : null}
   </>;
-});
+};
 
 type QuestEntryProps = {
   quest: {name: string, state: null | string, possibleState: (null | string)[]};
@@ -130,11 +130,11 @@ type QuestEntryProps = {
   separator: boolean;
 }
 
-const QuestEntry:FC<QuestEntryProps> = ({
+function QuestEntry({
   quest,
   onChange,
   separator,
-}) => {
+}:QuestEntryProps) {
   return <>
     <label className={styles["state-entry"]}>
       {quest.name}:
@@ -156,7 +156,7 @@ const QuestEntry:FC<QuestEntryProps> = ({
   </>;
 }
 
-const Separator:FC<{}> = () => {
+function Separator() {
   return <div className={styles["separator"]} />;
 }
 
