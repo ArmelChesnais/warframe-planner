@@ -32,7 +32,7 @@ const PlanDisplay:FC<PlanDisplayProps> = ({
 }
 
 type PlanEntryProps = {
-  action: Action<State>;
+  action: Action;
   resources: [string, string|number][];
 }
 

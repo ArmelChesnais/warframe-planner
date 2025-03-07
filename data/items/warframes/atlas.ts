@@ -23,7 +23,7 @@ export const atlas:Record<string,Resource<State>> = {
     buy: {
       cost: 1,
       preconditions: {
-        "The Jordas Precept": true,
+        "The Jordas Precept": "complete",
       },
       repeatable: true,
     },

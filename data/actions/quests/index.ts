@@ -1,6 +1,7 @@
+import { Action } from "@/data/dataHelpers";
 import quests from "@/data/items/quests";
 
-export default[
+export default [
   {
     name: "The Hex",
     cost: 120,
@@ -130,4 +131,4 @@ export default[
     },
     effects: { "Natah": "complete" },
   },
-];
+] as Action[];

@@ -33,10 +33,10 @@ export type OneOf<
 
 export type State = Record<string, any>;
 
-type ConditionValue<T> = T[keyof T]
-| { "=": T[keyof T][] }
-| { "!": T[keyof T][] }
-| { "!=": T[keyof T][] }
+type ConditionValue = string | number
+| { "=": (string|number)[] }
+| { "!": (string|number)[] }
+| { "!=": (string|number)[] }
 | { ">": number }
 | { ">=": number }
 | { "<": number }
@@ -46,7 +46,8 @@ type ConditionValue<T> = T[keyof T]
 | { includes: string[] }
 | { inc: string[] };
 
-export type Conditions<T extends State> = Partial<Record<keyof T, ConditionValue<T>>>;
+// export type Conditions<T extends State> = Partial<Record<keyof T, ConditionValue<T>>>;
+export type Conditions = Record<string, ConditionValue>;
 
 type ConsumeValue = number
 
@@ -59,9 +60,9 @@ type EffectValue = string | number
 
 export type Effects = {[key: string]: EffectValue};
 
-export type Action<T extends State> = {
+export type Action = {
   name: string;
-  preconditions?: Conditions<T>;
+  preconditions?: Conditions;
   consumes?: Record<string, number>;
   effects: Effects;
   cost: number;
@@ -104,7 +105,7 @@ class PriorityQueue<T> {
   }
 }
 
-function satisfies<T extends State>(state:T, conditions?:Conditions<T>, consumes?:Consumes<T>):boolean {
+function satisfies<T extends State>(state:T, conditions?:Conditions, consumes?:Consumes<T>):boolean {
   
   let result = true;
   if ( conditions ) {
@@ -140,6 +141,7 @@ function satisfies<T extends State>(state:T, conditions?:Conditions<T>, consumes
       }
     };
   }
+  return result;
   // if ( consumes ) {
   //   for (const [key, value] of Object.entries(consumes)) {
   //     if (state[key] < value) {
@@ -149,7 +151,7 @@ function satisfies<T extends State>(state:T, conditions?:Conditions<T>, consumes
   // }
 }
 
-function applyEffects<T extends State>(state:T, effects?:Effects<T>, consumes?:Consumes<T>):State {
+function applyEffects<T extends State>(state:T, effects?:Effects, consumes?:Consumes<T>):State {
   const newState:State = { ...state };
   if ( effects ) {
     for (const [key, value] of Object.entries(effects)) {
@@ -176,15 +178,15 @@ function heuristic(state:State, goal:State):number {
   return Object.keys(goal).filter(key => state[key] !== goal[key]).length;
 }
 
-type ActionsByEffect<T extends State> = Record<string, Action<T>[]>;
+type ActionsByEffect<T extends State> = Record<string, Action[]>;
 
-function isValidEffectToGroup<T extends State>(effectVal?:EffectValue<T>):boolean {
+function isValidEffectToGroup<T extends State>(effectVal?:EffectValue):boolean {
   return typeof effectVal === "string" 
     || typeof effectVal === "number" 
     || ( !!effectVal && typeof effectVal === "object" && "+" in effectVal );
 }
 
-function groupActionsByEffect<T extends State>(actions:Action<T>[]):ActionsByEffect<T> {
+function groupActionsByEffect<T extends State>(actions:Action[]):ActionsByEffect<T> {
   const actionsByEffect:ActionsByEffect<T> = {};
   for (const action of actions) {
     effectValueLoop: for (const effect of Object.keys(action.effects)) {
@@ -196,9 +198,10 @@ function groupActionsByEffect<T extends State>(actions:Action<T>[]):ActionsByEff
   return actionsByEffect;
 }
 
-function groupActionsByPrecondition<T extends State>(actions:Action<T>[]):ActionsByEffect<T> {
+function groupActionsByPrecondition<T extends State>(actions:Action[]):ActionsByEffect<T> {
   const actionsByEffect:ActionsByEffect<T> = {};
   for (const action of actions) {
+    if ( !action.preconditions ) continue;
     for (const effect of Object.keys(action.preconditions)) {
       if (!actionsByEffect[effect]) actionsByEffect[effect] = [];
       actionsByEffect[effect].push(action);
@@ -208,9 +211,9 @@ function groupActionsByPrecondition<T extends State>(actions:Action<T>[]):Action
 }
 
 function combineTwoConditions<T>(
-  aCond: ConditionValue<T>,
-  bCond: ConditionValue<T>
-): ConditionValue<T> {
+  aCond: ConditionValue,
+  bCond: ConditionValue
+): ConditionValue {
 
   if (aCond && typeof aCond === "object" && ">=" in aCond &&
       bCond && typeof bCond === "object" && ">=" in bCond) {
@@ -223,15 +226,15 @@ function combineTwoConditions<T>(
 }
 
 function mergeConditions<T extends State>(
-  goalA: Conditions<T>,
-  goalB: Conditions<T>
-): Conditions<T> {
+  goalA: Conditions,
+  goalB: Conditions
+): Conditions {
   // Combine the key-value pairs of both. For numeric resource needs, we might need to max them.
   // For quests, if there's a direct conflict, you might do error handling, etc.
 
-  const result: Conditions<T> = { ...goalA };
+  const result: Conditions = { ...goalA };
 
-  for (const [key, bCond] of Object.entries(goalB) as [keyof T, ConditionValue<T>][]) {
+  for (const [key, bCond] of Object.entries(goalB)) {
     const aCond = result[key];
 
     // If there's no conflict, just set it
@@ -249,8 +252,8 @@ function mergeConditions<T extends State>(
   return result;
 }
 
-function applyAction<T extends State>(currentGoal:Conditions<T>, state: T, action:Action<T>)
-  : { conditions: Conditions<T>, state: T }
+function applyAction<T extends State>(currentGoal:Conditions, state: T, action:Action)
+  : { conditions: Conditions, state: T }
 {
   const { effects, preconditions } = action;
 
@@ -294,7 +297,7 @@ function applyAction<T extends State>(currentGoal:Conditions<T>, state: T, actio
   return {conditions: newGoal, state};
 }
 
-function meetsCondition<T extends State>(conditionValue:ConditionValue<T>,  effectValue: EffectValue<T>):boolean {
+function meetsCondition<T extends State>(conditionValue:ConditionValue,  effectValue: EffectValue):boolean {
   if (typeof conditionValue === "object") {
     if ("!" in conditionValue) {
       return !conditionValue["!"].some((val) => val === effectValue);
@@ -315,13 +318,14 @@ function meetsCondition<T extends State>(conditionValue:ConditionValue<T>,  effe
     } else if ("endsWith" in conditionValue) {
       return conditionValue.endsWith.some((end) => (effectValue as string).endsWith(end));
     }
+    return false;
   } else {
     return conditionValue === effectValue;
   }
 }
 
-function getUnmetConditions<T extends State>(state:T, goalConditions:Conditions<T>):Conditions<State> {
-  const unmetConditions:Conditions<State> = {};
+function getUnmetConditions<T extends State>(state:T, goalConditions:Conditions):Conditions {
+  const unmetConditions:Conditions = {};
   for (const [key, condition] of Object.entries(goalConditions)) {
     if (condition && !meetsCondition(condition, state[key])) {
       if ( typeof condition === "object" && ">=" in condition ) {
@@ -334,27 +338,28 @@ function getUnmetConditions<T extends State>(state:T, goalConditions:Conditions<
   return unmetConditions;
 }
 
-function effectFulfillsACondition<T extends State>(effect:Effects<T>, condition:Conditions<T>):boolean {
+function effectFulfillsACondition<T extends State>(effect:Effects, condition:Conditions):boolean {
   return Object.entries(condition).some(([key, value]) => {
     if (typeof value === "object") {
-      if ("!" in value) {
-        return value["!"].includes(effect[key]);
-      } else if ("=" in value) {
-        return value["="].includes(effect[key]);
+      const effectVal = effect[key];
+      if ("!" in value && (typeof effectVal === "string" || typeof effectVal === "number")) {
+        return value["!"].includes(effectVal);
+      } else if ("=" in value && (typeof effectVal === "string" || typeof effectVal === "number")) {
+        return value["="].includes(effectVal);
       } else if ("!=" in value) {
-        return value["!="].every(val => val !== effect[key]);
-      } else if (">" in value) {
-        return effect[key] > value[">"];
-      } else if (">=" in value) {
-        return effect[key] >= value[">="];
-      } else if ("<" in value) {
-        return effect[key] < value["<"];
-      } else if ("<=" in value) {
-        return effect[key] <= value["<="];
-      } else if ("startsWith" in value) {
-        return value.startsWith.some((start) => effect[key].startsWith(start));
-      } else if ("endsWith" in value) {
-        return value.endsWith.some((end) => effect[key].endsWith(end));
+        return value["!="].every(val => val !== effectVal);
+      } else if (">" in value && typeof effectVal === "number") {
+        return effectVal > value[">"];
+      } else if (">=" in value && typeof effectVal === "number") {
+        return effectVal >= value[">="];
+      } else if ("<" in value && typeof effectVal === "number") {
+        return effectVal < value["<"];
+      } else if ("<=" in value && typeof effectVal === "number") {
+        return effectVal <= value["<="];
+      } else if ("startsWith" in value && typeof effectVal === "string") {
+        return value.startsWith.some((start) => effectVal.startsWith(start));
+      } else if ("endsWith" in value && typeof effectVal === "string") {
+        return value.endsWith.some((end) => effectVal.endsWith(end));
       }
     } else {
       return effect[key] === value;
@@ -362,17 +367,17 @@ function effectFulfillsACondition<T extends State>(effect:Effects<T>, condition:
   });
 }
 
-function getNewConditions<T extends State>(state: T, conditions:Conditions<T>, action:Action<T>):Conditions<T> {
-  const newConditions:Conditions<T> = {};
-  for ( const [key, effect] of Object.entries(action.effects)) {
-    if (conditions[key] && effectFulfillsACondition(value, conditions[key])) {
-      newConditions[key] = conditions[key];
-    }
-  }
-  return newConditions;
-}
+// function getNewConditions<T extends State>(state: T, conditions:Conditions, action:Action):Conditions {
+//   const newConditions:Conditions = {};
+//   for ( const [key, effect] of Object.entries(action.effects)) {
+//     if (conditions[key] && effectFulfillsACondition(value, conditions[key])) {
+//       newConditions[key] = conditions[key];
+//     }
+//   }
+//   return newConditions;
+// }
 
-function conditionMet<T extends State>(stateVal: T[keyof T], conditionVal: ConditionValue<T>): boolean {
+function conditionMet<T extends State>(stateVal: T[keyof T], conditionVal: ConditionValue): boolean {
   if (typeof conditionVal === "object") {
     if ("!" in conditionVal) {
       return !conditionVal["!"].includes(stateVal);
@@ -402,9 +407,9 @@ function conditionMet<T extends State>(stateVal: T[keyof T], conditionVal: Condi
 
 function areConditionsSatisfied<T extends State>(
   state: T,
-  conditions: Conditions<T>
+  conditions: Conditions
 ): boolean {
-  for (const [key, condValue] of Object.entries(conditions) as [keyof T, ConditionValue<T>][]) {
+  for (const [key, condValue] of Object.entries(conditions) as [keyof T, ConditionValue][]) {
     const stVal = state[key];
     if (!conditionMet(stVal, condValue)) {
       return false;
@@ -415,12 +420,12 @@ function areConditionsSatisfied<T extends State>(
 
 function repeatsToFulfillAllPossibleConditions<T extends State>(
   initialState: State,
-  conditions: Conditions<T>,
-  action: Action<T>
+  conditions: Conditions,
+  action: Action
 ): { repeats: number, resources?: [string, number|string][] } {
   let maxRepeats = 1;
   const { effects } = action;
-  const resources: [string, number][] = [];
+  const resources: [string, number|string][] = [];
   Object.entries(conditions).forEach(([key, value]) => {
     const effectValue = effects[key];
     if (
@@ -459,8 +464,8 @@ function repeatsToFulfillAllPossibleConditions<T extends State>(
 
 
 function minimumRepeatsToFulfillAtLeastOneCondition<T extends State>(
-  conditions: Conditions<T>,
-  action: Action<T>
+  conditions: Conditions,
+  action: Action
 ): number {
   if (!action.repeatable) {
     return 1;
@@ -490,9 +495,9 @@ function minimumRepeatsToFulfillAtLeastOneCondition<T extends State>(
 }
 
 function multiplyActionEffects<T extends State>(
-  action: Action<T>,
+  action: Action,
   repeats: number
-): Action<T> {
+): Action {
   const newAction = JSON.parse(JSON.stringify(action));
   for (const [key, value] of Object.entries(action.effects)) {
     if (typeof value === "object" && "+" in value) {
@@ -504,7 +509,7 @@ function multiplyActionEffects<T extends State>(
   return newAction;
 }
 
-function estimateHeuristic(conditions:Conditions<State>, items:Record<string, Resource<State>>):number {
+function estimateHeuristic(conditions:Conditions, items:Record<string, Resource<State>>):number {
   return Object.entries(conditions).reduce((acc, [key, value]) => {
     if (typeof value === "object" && value && ">=" in value) {
       try {
@@ -538,8 +543,8 @@ function buildTree(input:[string, any][]) {
 
 export type AStarReturnValue<T extends State> = { 
   plan: {
-    action: Action<T>,
-    resources:[string, Record<keyof T, ConditionValue<T>>[string]][],
+    action: Action,
+    resources:[string, Record<keyof T, string|number>[string]][],
   }[] | null
   perf: PerformanceEntry|null
 };
@@ -552,17 +557,17 @@ let actionsByEffect:ActionsByEffect<State>;
 
 export function* aStarPlanReversedGenerator<T extends State>(
   initialState: T,
-  goalConditions: Conditions<T>,
-  actions: Action<T>[],
+  goalConditions: Conditions,
+  actions: Action[],
   items: Record<string, Resource<T>>,
   maxCost = 999999
 ): Generator<AStarReturnValue<T>, AStarReturnValue<T>, AStarYieldParams> {
   performance.mark("start");
   console.log("starting aStarPlanReversed");
   const openSet = new PriorityQueue<{ 
-    conditions: Conditions<T>, 
+    conditions: Conditions, 
     // state: T,
-    plan: {action: Action<T>, resources:[string, number|string][]}[], 
+    plan: {action: Action, resources:[string, number|string][]}[], 
     cost: number 
   }>();
   console.log("before actionsByEffect");

@@ -7,13 +7,13 @@ export type Resource<T extends State> = {
     cost: number;
     consumes?: Consumes<T>;
     once?: boolean;
-    preconditions?: Conditions<T>;
+    preconditions?: Conditions;
     repeatable?: boolean;
   };
   buy?: {
     cost: number;
     consumes?: Consumes<T>;
-    preconditions?: Conditions<T>;
+    preconditions?: Conditions;
     repeatable?: boolean;
   };
 }

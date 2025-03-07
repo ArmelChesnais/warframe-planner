@@ -9,7 +9,7 @@ import dojo from "./actions/locations/dojo";
 const craftAndBuyActions = [];
 for ( const item of items ) {
   if ( "craft" in item && item.craft ) {
-    const craftingAction:Action<State> = {
+    const craftingAction:Action = {
       name: `Craft ${item.name}`,
       effects: { [item.name]: { "+": 1 } },
       ...item.craft
@@ -17,7 +17,7 @@ for ( const item of items ) {
     craftAndBuyActions.push(craftingAction);
   }
   if ( "buy" in item && item.buy ) {
-    const buyAction:Action<State> = {
+    const buyAction:Action = {
       name: `Buy ${item.name}`,
       effects: { [item.name]: { "+": 1 } },
       ...item.buy
@@ -27,7 +27,7 @@ for ( const item of items ) {
 }
 // console.log("Crafting Actions", craftAndBuyActions);
 
-const actions:Action<State>[] = [
+const actions:Action[] = [
   ...quests,
   ...warframeSideQuests,
   ...locations,
