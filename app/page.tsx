@@ -1,101 +1,232 @@
+'use client'
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/warframe.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+// import { goalState } from "@/data/data";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+import type { State, Action, AStarReturnValue } from "@/data/dataHelpers";
+import { aStarPlanReversedGenerator } from "@/data/dataHelpers";
+import actions from "@/data/data";
+import { itemMap } from "@/data/items";
+import PlanDisplay from "@/components/PlanDisplay/PlanDisplay";
+
+import type { Resource } from "@/data/items/types";
+
+import styles from "./testpage.module.scss";
+import InitialStateDisplay from "@/components/InitialStateDisplay/InitialStateDisplay";
+
+
+// A large initial state space
+// const initialState = {
+// };
+
+// const goalState: State = {
+//   // "The Hex": "complete",
+//   // "Ember": { ">=": 1 },
+//   // "Excalibur": { ">=": 1 },
+//   "Ash": { ">=": 1 },
+//   // "Ember Neuroptics Blueprint": { ">=": 1 },
+// };
+
+type InitialItemsState = (Resource<State>&{count: number})[]
+type InitialQuestState = {name: string, state: null|string, possibleState: (null|string)[]}[]
+
+function convertInitialItemsQuestsToInitialState(initialItemsState: InitialItemsState, initialQuestState: InitialQuestState): State {
+  const initialState: State = {};
+  for (const item of initialItemsState) {
+    initialState[item.name] = item.count;
+  }
+  for (const quest of initialQuestState) {
+    initialState[quest.name] = quest.state;
+  }
+  return initialState;
+}
+
+function convertGoalItemsQuestsToGoalState(itemGoals: InitialItemsState, questGoals: InitialQuestState): State {
+  const goalState: State = {};
+  for (const item of itemGoals) {
+    goalState[item.name] = { ">=": item.count };
+  }
+  for (const quest of questGoals) {
+    goalState[quest.name] = quest.state;
+  }
+  return goalState;
+}
+
+export default function Test() {
+  const _initialItems:InitialItemsState = useMemo(() => Object.values(itemMap).sort((a, b) => a.name.localeCompare(b.name)).map((item) => ({...item, count: 0})), []);
+  const [initialItemsState, setInitialItemsState] = useState(_initialItems);
+  const [itemGoals, setItemGoals] = useState<InitialItemsState>(_initialItems);
+  const [buttonLabel, setButtonLabel] = useState("Run");
+  const _initialQuests: InitialQuestState = useMemo(() => {
+    const questList: InitialQuestState = [];
+    for (const action of actions) {
+      effectsLoop: for ( const [key, value] of Object.entries(action.effects) ) {
+        if ( typeof value !== "string" ) continue effectsLoop;
+        const existingQuest = questList.find((quest) => quest.name === key);
+        if ( !existingQuest ) {
+          questList.push({name: key, state: null, possibleState: [null, value]});
+        } else if ( !existingQuest.possibleState.includes(value) ) {
+          existingQuest.possibleState.push(value);
+        }
+      }
+    }
+    return questList
+  }, []);
+  const [initialQuestState, setInitialQuestState] = useState(_initialQuests);
+  const [questGoals, setQuestGoals] = useState(_initialQuests);
+
+  // console.log("initialItemsState:", initialItemsState, initialQuestState);
+  // console.log("itemGoals:", itemGoals, questGoals);
+  const [plan, setPlan] = useState<AStarReturnValue<State>["plan"]|null>(null);
+  const [perf, setPerf] = useState<string|null>(null);
+  const [status, setStatus] = useState<string|null>("Awaiting Run");
+  const animationFrameRef = useRef<number|null>(null);
+  const killSignalRef = useRef<boolean>(false);
+
+  function processPerf(perf: PerformanceEntry|null) {
+    const duration = perf?.duration;
+    if ( !duration ) {
+      setPerf(null);
+      return;
+    }
+    const toFormat = {
+      seconds: Math.floor(duration / 1000),
+      ms: Math.floor(duration % 1000)
+    }
+    const perfStringS = toFormat.seconds ? `${toFormat.seconds}s ` : "";
+    const perfStringMS = toFormat.ms ? `${toFormat.ms}ms` : "";
+    setPerf(`${perfStringS}${perfStringMS}`);
+  }
+
+  const startRun = () => {
+    if ( animationFrameRef.current !== null ) {
+      killSignalRef.current = true;
+      return;
+    }
+    // const initialState = convertInitialItemsStateToInitialState(initialItemsState);
+    const initialState = convertInitialItemsQuestsToInitialState(initialItemsState, initialQuestState);
+    const goalState = convertGoalItemsQuestsToGoalState(itemGoals, questGoals);
+    const generator = aStarPlanReversedGenerator(initialState, goalState, actions, itemMap, 10000);
+    let lastMeasure:DOMHighResTimeStamp, currentMeasure:DOMHighResTimeStamp;
+    let newPlan:typeof plan, newPerf:PerformanceEntry | null;
+    newPlan = newPerf = null;
+    const runGenerator = () => {
+      setStatus("Running");
+      lastMeasure = currentMeasure = performance.now();
+      while ( currentMeasure - lastMeasure < 100 ) {
+        const { value, done } = generator.next({kill:killSignalRef.current});
+        if ( value.plan ) newPlan = value.plan;
+        newPerf = value.perf;
+        if (done) {
+          setStatus(killSignalRef.current ? "Killed" : "Done");
+          killSignalRef.current = false;
+          setPlan(newPlan);
+          setButtonLabel("Run");
+          processPerf(newPerf);
+          if (animationFrameRef.current !== null) {
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+          }
+          return;
+        }
+        currentMeasure = performance.now();
+      }
+      setPlan(newPlan);
+      processPerf(newPerf);
+      animationFrameRef.current = requestAnimationFrame(runGenerator);
+    }
+    setButtonLabel("Stop");
+    runGenerator();
+  };
+      
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null
+      }
+    }
+  }, []);
+
+  const updateItemState = useCallback((name: string, count: number) => {
+    setInitialItemsState((prev) => {
+      const newItems = prev.map((item) => {
+        if ( item.name === name ) {
+          return {...item, count: Math.max(0, count)};
+        }
+        return item;
+      });
+      return newItems;
+    });
+  }, []);
+  const updateQuestState = useCallback((name: string, state: null|string) => {
+    setInitialQuestState((prev) => {
+      const newQuests = prev.map((quest) => {
+        if ( quest.name === name ) {
+          return {...quest, state: state === "incomplete" ? null : state};
+        }
+        return quest;
+      });
+      return newQuests;
+    });
+  }, []);
+  const updateItemGoal = useCallback((name: string, count: number) => {
+    setItemGoals((prev) => {
+      const newItems = prev.map((item) => {
+        if ( item.name === name ) {
+          return {...item, count: Math.max(0, count)};
+        }
+        return item;
+      });
+      return newItems;
+    });
+  }, []);
+  const updateQuestGoal = useCallback((name: string, state: null|string) => {
+    console.log("updateQuestGoal", name, state);
+    setQuestGoals((prev) => {
+      const newQuests = prev.map((quest) => {
+        if ( quest.name === name ) {
+          return {...quest, state: state === "incomplete" ? null : state};
+        }
+        return quest;
+      });
+      return newQuests;
+    });
+  }, []);
+
+  // const { plan, perf } = React.useMemo(() => {
+  //   return aStarPlanReversed(initialState, goalState, actions, 10000);
+  // }, []);
+  return (
+  <div className={styles["planner-container"]}>
+    <div className={styles["planner-header"]}>
+      <h1>Warframe Planner</h1>
+      <button className={styles["run-button"]} onClick={startRun}>
+        {buttonLabel}
+      </button>
+      <div>{status}{perf ? <span className={styles["perf"]}> in {perf}</span> : null}</div>
+      
     </div>
+    <div className={styles["planner-main-view"]}>
+      <InitialStateDisplay
+        headerLabel="Initial State"
+        initialItemState={initialItemsState}
+        updateItemState={updateItemState}
+        initialQuestState={initialQuestState}
+        updateQuestState={updateQuestState}
+      />
+      <PlanDisplay plan={plan} />
+      <InitialStateDisplay
+        headerLabel="Goal State"
+        initialItemState={itemGoals}
+        updateItemState={updateItemGoal}
+        initialQuestState={questGoals}
+        updateQuestState={updateQuestGoal}
+      />
+    </div>
+  </div>
   );
 }
+
