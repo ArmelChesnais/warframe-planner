@@ -1,6 +1,6 @@
 import { State } from "@/data/dataHelpers";
 import { Resource } from "@/data/items/types";
-import { FC, memo, useState } from "react";
+import { FC, useState } from "react";
 
 import styles from "./InitialStateDisplay.module.scss";
 
