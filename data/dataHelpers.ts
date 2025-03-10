@@ -422,7 +422,7 @@ function repeatsToFulfillAllPossibleConditions<T extends State>(
   initialState: State,
   conditions: Conditions,
   action: Action
-): { repeats: number, resources?: [string, number|string][] } {
+): { repeats: number, resources: [string, number|string][] } {
   let maxRepeats = 1;
   const { effects } = action;
   const resources: [string, number|string][] = [];
@@ -555,6 +555,22 @@ export type AStarYieldParams = {
 
 let actionsByEffect:ActionsByEffect<State>;
 
+function generateKeyFromResources(resources: [string, number|string][]):string {
+  // consolidate all the same resources togetherby putting them in an ordered map
+  // then sort the map by key
+  const resourceMap:{[key:string]: number|string} = {};
+  // const resourceMap = new Map<string, number>();
+  for (const [key, value] of resources) {
+    // resourceMap.set(key, (resourceMap.get(key) ?? 0) + Number(value));
+    if (typeof value === "number" && typeof resourceMap[key] === "number") {
+      resourceMap[key] = (resourceMap[key] ?? 0) + value;
+    } else {
+      resourceMap[key] = value;
+    }
+  }
+  return JSON.stringify([...Object.entries(resourceMap)].sort(([a], [b]) => a.localeCompare(b)));
+}
+
 export function* aStarPlanReversedGenerator<T extends State>(
   initialState: T,
   goalConditions: Conditions,
@@ -602,8 +618,7 @@ export function* aStarPlanReversedGenerator<T extends State>(
     const { kill }:AStarYieldParams = yield { plan, perf: null };
     // Check if initialState satisfies these conditions already
     const unmetConditions = getUnmetConditions(initialState, conditions);
-    // if (areConditionsSatisfied(initialState, conditions)) {
-    // if (areConditionsSatisfied(initialState, unmetConditions)) {
+    // console.log("unmetConditions", unmetConditions);
     if (kill || Object.keys(unmetConditions).length === 0) {
       // Goal reached
       performance.mark("success");
@@ -624,7 +639,7 @@ export function* aStarPlanReversedGenerator<T extends State>(
         // const {repeats, resources} = repeatsToFulfillAllPossibleConditions(initialState, unmetConditions, action);
         const newCost = cost + (action.cost * repeats);
         if ( action.once && plan.some(({action: {name}}) => name === action.name) ) {
-          console.log("skipping action due to once", action.name);
+          console.log("skipping action due to once", action.name, plan);
           continue actionByEffectLoop;
         }
         if (newCost > maxCost) {
@@ -637,9 +652,15 @@ export function* aStarPlanReversedGenerator<T extends State>(
         // Try to reduce 'conditions' using action's effects
         const { conditions: newConditions, state: newState } = applyAction(conditions, initialState, action);
         // console.log("repeats", repeats, "newConditions", newConditions, "oldConditions", conditions, "action", action);
-
+        const newPlan = [{action, resources}, ...plan]
         // console.log("newConditions", Object.entries(newConditions).sort(([a], [b]) => a.localeCompare(b)));
-        const stateKey = JSON.stringify(buildTree(Object.entries(newConditions)));
+        // const stateKey = JSON.stringify(buildTree(Object.entries(newConditions)));
+        const stateKey = generateKeyFromResources(newPlan.map(({resources}) => resources).flat());
+        // console.log("stateKey", stateKey);
+        // const doesnthave = !visited.has(stateKey);
+        // const isbetter = newCost < visited.get(stateKey)!;
+        // const existingCost = visited.get(stateKey);
+        // console.log({doesnthave, isbetter, newCost, existingCost, stateKey});
         if (!visited.has(stateKey) || newCost < visited.get(stateKey)!) {
           // console.log("adding to visited", stateKey, newCost);
           // const unmetConditions = getUnmetConditions(newState, newConditions);
@@ -647,7 +668,8 @@ export function* aStarPlanReversedGenerator<T extends State>(
           openSet.enqueue({
               conditions: newConditions, 
               // state: newState, 
-              plan: [{action, resources: resources!}, ...plan], 
+              // plan: [{action, resources}, ...plan], 
+              plan: newPlan, 
               // plan: [{action, resources: []}, ...plan], 
               cost: newCost
             },

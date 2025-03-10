@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100%;
+  min-height: 0;
+  flex-shrink: 1;
 }
 
 .tabs {
@@ -24,12 +24,16 @@
 }
 
 .tab-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  // display: flex;
+  // flex-direction: column;
+  // align-items: center;
+  // justify-content: center;
   width: 100%;
   border: 1px solid white;
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .initial-state-search {
@@ -66,6 +70,10 @@
   input {
     width: 80px;
   }
+}
+
+.highlight {
+  background-color: rgba(0, 255, 0, 0.1);
 }
 
 .separator {

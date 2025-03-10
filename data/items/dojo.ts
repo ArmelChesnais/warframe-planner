@@ -28,7 +28,7 @@ const dojo:Record<string,Resource<State>> = {
       cost: 24 * 60,
       once: true,
       preconditions: {
-        "Clan Key": 1,
+        "Clan Key": {">=": 1},
       },
       consumes: {
       },

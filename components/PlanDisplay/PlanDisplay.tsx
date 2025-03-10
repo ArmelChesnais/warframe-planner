@@ -25,9 +25,11 @@ const PlanDisplay:FC<PlanDisplayProps> = ({
 
   return <div className={classList.join(" ")}>
     Plan:
-    {plan.map(({action, resources}, index) => 
-      <PlanEntry key={index} action={action} resources={resources} />
-    )}
+    <div className={styles["plan-entries"]}>
+      {plan.map(({action, resources}, index) => 
+        <PlanEntry key={index} action={action} resources={resources} />
+      )}
+    </div>
   </div>;
 }
 
