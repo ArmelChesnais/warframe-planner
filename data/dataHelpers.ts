@@ -509,21 +509,10 @@ function multiplyActionEffects<T extends State>(
   return newAction;
 }
 
-function estimateHeuristic(conditions:Conditions, items:Record<string, Resource<State>>):number {
+function estimateHeuristic(conditions:Conditions, items:Record<string, Resource<State>>, costOfCondition: (key: string, value: any) => number):number {
   return Object.entries(conditions).reduce((acc, [key, value]) => {
-    if (typeof value === "object" && value && ">=" in value) {
-      try {
-      return acc + 5 * (value[">="] / items[key].scale);
-      } catch (e) {
-        console.log("error", key, value, items[key]);
-      }
-    } else if (value === "complete") {
-      return acc + 10;
-    }
-    return acc;
+    return acc + costOfCondition(key, value);
   }, 0);
-  return Object.keys(conditions).length * 5;
-  return 0;
 }
 
 type Tree = { [key: string]: Tree | any };
@@ -571,6 +560,114 @@ function generateKeyFromResources(resources: [string, number|string][]):string {
   return JSON.stringify([...Object.entries(resourceMap)].sort(([a], [b]) => a.localeCompare(b)));
 }
 
+function buildCostEstimator(
+  initialState: State,
+  actionsByEffect: ActionsByEffect<State>,
+) {
+  /** key -> cost of achieving a flag */
+  const flagMemo = new Map<string, number>();
+  /** action.name -> reachCost */
+  const unlockMemo = new Map<string, number>();
+  /** cycle guard for condition keys */
+  const inProgress = new Set<string>();
+  /** compares cycles to determine if we should memoize or not */
+  let cycleHits = 0;
+
+  function reachCost(action: Action): number {
+    if ( action.preconditions === undefined || Object.keys(action.preconditions).length === 0 ) {
+      return 0;
+    }
+    if ( unlockMemo.has(action.name) ) {
+      return unlockMemo.get(action.name)!;
+    }
+
+    let totalCost = 0;
+    const before = cycleHits;
+    loop: for (const [key, cond] of Object.entries(action.preconditions)) {
+      const cost = costOfCondition(key, cond);
+      if (cost === Infinity) {
+        // if any precondition is impossible to satisfy, exit early as the total cost is Infinity
+        totalCost = Infinity;
+        break loop;
+      }
+      totalCost += cost;
+    }
+    if (cycleHits === before) {
+      unlockMemo.set(action.name, totalCost);
+    }
+    return totalCost;
+  }
+
+  function costOfCondition(key: string, cond: ConditionValue): number {
+    if ( inProgress.has(key) ) {
+      // cycle detected, return Infinity to avoid infinite recursion
+      cycleHits++;
+      return Infinity;
+    }
+    inProgress.add(key);
+    // by default, if no producer found, return Infinity
+    let result = Infinity;
+    // Case A — resource: cond is { ">=": n }
+    //   deficit = n − (initialState[key] ?? 0); deficit <= 0 → return 0
+    //   min over actionsByEffect[key], counting only actions whose
+    //   effects[key] is { "+": perRun }:
+    //     reachCost(action) + Math.ceil(deficit / perRun) * action.cost
+    //
+    cond: if (cond && typeof cond === "object" && ">=" in cond) {
+      const deficit = cond[">="] - (initialState[key] ?? 0);
+      if (deficit <= 0) {
+        result = 0;
+        break cond;
+      }
+      for (const action of actionsByEffect[key] ?? []) {
+        const effectValue = action.effects[key];
+        if (typeof effectValue === "object" && "+" in effectValue) {
+          const perRun = effectValue["+"]; 
+          const cost = reachCost(action) + Math.ceil(deficit / perRun) * action.cost;
+          if (cost < result) {
+            result = cost;
+          }
+        }
+      }
+    }
+    // Case B — flag: cond is a string (e.g. "complete")
+    //   initialState[key] === cond → return 0
+    //   min over producers whose effects[key] === cond of:
+    //     action.cost + reachCost(action)
+    //
+    else if (typeof cond === "string") {
+      const before = cycleHits;
+      if ( flagMemo.has(`${key}::${cond}`) ) {
+        result = flagMemo.get(`${key}::${cond}`)!;
+        break cond;
+      }
+      if (initialState[key] === cond) {
+        result = 0;
+        break cond;
+      }
+      for (const action of actionsByEffect[key] ?? []) {
+        const effectValue = action.effects[key];
+        if (effectValue === cond) {
+          const cost = action.cost + reachCost(action);
+          if (cost < result) {
+            result = cost;
+          }
+        }
+      }
+      if ( before === cycleHits ) {
+        flagMemo.set(`${key}::${cond}`, result);
+      }
+    // Any other cond shape ("!", "includes", ...) → return 0  (safe floor)
+    } else if (typeof cond === "number" || (typeof cond === "object")) {
+      result = 0; // safe floor for any other cond shape ("!", "includes", ...)
+    }
+    inProgress.delete(key);
+    return result;
+  }
+
+  return { costOfCondition };
+}
+
 export function* aStarPlanReversedGenerator<T extends State>(
   initialState: T,
   goalConditions: Conditions,
@@ -589,6 +686,7 @@ export function* aStarPlanReversedGenerator<T extends State>(
   console.log("before actionsByEffect");
   // Your indexing helpers
   if ( !actionsByEffect ) actionsByEffect = groupActionsByEffect(actions);
+  const { costOfCondition } = buildCostEstimator(initialState, actionsByEffect);
   // const actionsByEffect = groupActionsByEffect(actions);
   console.log("after actionsByEffect");
 
@@ -597,13 +695,16 @@ export function* aStarPlanReversedGenerator<T extends State>(
   const unmetGoalConditions = getUnmetConditions(initialState, goalConditions);
   console.log("after unmetGoalConditions");
 
+  const initialCost:number = Object.entries(goalConditions).reduce((acc, [key, value]) => {
+    return acc + costOfCondition(key, value);
+  }, 0);
   openSet.enqueue({ 
     // conditions: unmetGoalConditions,
     conditions: goalConditions,
     // state: initialState,
     plan: [],
     cost: 0 }
-    , 0);
+    , initialCost);
   console.log("after enqueue");
 
   const visited = new Map<string, number>();
@@ -673,7 +774,7 @@ export function* aStarPlanReversedGenerator<T extends State>(
               // plan: [{action, resources: []}, ...plan], 
               cost: newCost
             },
-            estimateHeuristic(newConditions, items) // your heuristic can be newCost + estimateHeuristic(…)
+            newCost + estimateHeuristic(newConditions, items, costOfCondition) // your heuristic can be newCost + estimateHeuristic(…)
           );
         }
       }

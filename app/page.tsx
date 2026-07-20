@@ -108,7 +108,7 @@ export default function Test() {
     // const initialState = convertInitialItemsStateToInitialState(initialItemsState);
     const initialState = convertInitialItemsQuestsToInitialState(initialItemsState, initialQuestState);
     const goalState = convertGoalItemsQuestsToGoalState(itemGoals, questGoals);
-    const generator = aStarPlanReversedGenerator(initialState, goalState, actions, itemMap, 10000);
+    const generator = aStarPlanReversedGenerator(initialState, goalState, actions, itemMap, 10_000);
     let lastMeasure:DOMHighResTimeStamp, currentMeasure:DOMHighResTimeStamp;
     let newPlan:typeof plan, newPerf:PerformanceEntry | null;
     newPlan = newPerf = null;
