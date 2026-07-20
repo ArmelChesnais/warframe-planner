@@ -1,6 +1,8 @@
 import type { FC } from "react";
 import type { Action, AStarReturnValue, State } from "@/data/dataHelpers";
 
+import { formatTime } from "@/utils/timeUtils";
+
 import styles from "./PlanDisplay.module.scss";
 
 type PlanDisplayProps = {
@@ -22,9 +24,11 @@ const PlanDisplay:FC<PlanDisplayProps> = ({
       no Plan found
     </div>;
   }
+  const totalTime = plan.reduce((acc, {action}) => acc + action.cost, 0);
+  const formattedTime = formatTime(totalTime, "minutes", "HH:mm:ss", true);
 
   return <div className={classList.join(" ")}>
-    Plan:
+    Plan (estimated time: {formattedTime}):
     <div className={styles["plan-entries"]}>
       {plan.map(({action, resources}, index) => 
         <PlanEntry key={index} action={action} resources={resources} />
