@@ -573,17 +573,20 @@ function buildCostEstimator(
   /** compares cycles to determine if we should memoize or not */
   let cycleHits = 0;
 
-  function reachCost(action: Action): number {
-    if ( action.preconditions === undefined || Object.keys(action.preconditions).length === 0 ) {
+  function reachCost(action: Action, filterKeys?: string[]): number {
+    const { preconditions } = action;
+    const filteredPreconditions = filterKeys ? Object.fromEntries(Object.entries(preconditions ?? {}).filter(([key]) => !filterKeys.includes(key))) : preconditions;
+    if ( !filteredPreconditions || Object.keys(filteredPreconditions).length === 0 ) {
       return 0;
     }
-    if ( unlockMemo.has(action.name) ) {
-      return unlockMemo.get(action.name)!;
+    const memoKey = `${action.name}::${filterKeys ? "unlocks" : "all"}`;
+    if ( unlockMemo.has(memoKey) ) {
+      return unlockMemo.get(memoKey)!;
     }
 
     let totalCost = 0;
     const before = cycleHits;
-    loop: for (const [key, cond] of Object.entries(action.preconditions)) {
+    loop: for (const [key, cond] of Object.entries(filteredPreconditions)) {
       const cost = costOfCondition(key, cond);
       if (cost === Infinity) {
         // if any precondition is impossible to satisfy, exit early as the total cost is Infinity
@@ -593,7 +596,7 @@ function buildCostEstimator(
       totalCost += cost;
     }
     if (cycleHits === before) {
-      unlockMemo.set(action.name, totalCost);
+      unlockMemo.set(memoKey, totalCost);
     }
     return totalCost;
   }
@@ -623,7 +626,11 @@ function buildCostEstimator(
         const effectValue = action.effects[key];
         if (typeof effectValue === "object" && "+" in effectValue) {
           const perRun = effectValue["+"]; 
-          const cost = reachCost(action) + Math.ceil(deficit / perRun) * action.cost;
+          const repeats = Math.ceil(deficit / perRun);
+          const consumes = Object.keys(action.consumes ?? {});
+          const cost = repeats * action.cost
+            + reachCost(action, consumes)
+            + (consumes.reduce((acc, consumeKey) => acc + costOfCondition(consumeKey, { ">=": action.consumes![consumeKey] * repeats }), 0));
           if (cost < result) {
             result = cost;
           }
@@ -668,6 +675,23 @@ function buildCostEstimator(
   return { costOfCondition };
 }
 
+type PlanNode = {
+  action: Action;
+  resources: [string, number|string][];
+}
+
+type Plan = PlanNode[];
+
+type QueueEntry<T extends State> = {
+  conditions: Conditions;
+  // state: T;
+  plan: Plan;
+  cost: number;
+}
+
+const isSpent = (action: Action, plan: Plan): boolean =>
+  !!action.once && plan.some(({action: {name}}) => name === action.name);
+
 export function* aStarPlanReversedGenerator<T extends State>(
   initialState: T,
   goalConditions: Conditions,
@@ -677,15 +701,25 @@ export function* aStarPlanReversedGenerator<T extends State>(
 ): Generator<AStarReturnValue<T>, AStarReturnValue<T>, AStarYieldParams> {
   performance.mark("start");
   console.log("starting aStarPlanReversed");
-  const openSet = new PriorityQueue<{ 
-    conditions: Conditions, 
-    // state: T,
-    plan: {action: Action, resources:[string, number|string][]}[], 
-    cost: number 
-  }>();
+  const openSet = new PriorityQueue<QueueEntry<T>>();
   console.log("before actionsByEffect");
   // Your indexing helpers
   if ( !actionsByEffect ) actionsByEffect = groupActionsByEffect(actions);
+  
+  function isNodeViable(conditions: Conditions, plan: Plan): boolean {
+    const unmetConditions = getUnmetConditions(initialState, conditions);
+    for (const [key, neededCond] of Object.entries(unmetConditions)) {
+      const producers = actionsByEffect[key];
+      if (!producers) return false;
+      const hasLiveProducer = producers.some(action => 
+        !isSpent(action, plan)
+      );
+      if (!hasLiveProducer) return false;
+
+    }
+    return true;
+  }
+
   const { costOfCondition } = buildCostEstimator(initialState, actionsByEffect);
   // const actionsByEffect = groupActionsByEffect(actions);
   console.log("after actionsByEffect");
@@ -725,26 +759,29 @@ export function* aStarPlanReversedGenerator<T extends State>(
       performance.mark("success");
       return {plan, perf: performance.measure("A* plan success", "start", "success")};
     }
-    
+    const entriesToAdd:Array<{stateKey:string, newCost: number, entry: QueueEntry<T>}> = [];
+    let nodeDead = false;
     // For each condition, see if any action's effects can help
     // conditionsLoop: for (const [key, neededCond] of Object.entries(conditions)) {
     conditionsLoop: for (const [key, neededCond] of Object.entries(unmetConditions)) {
       if (!actionsByEffect[key]) {
-        console.log("skipping condition due to no actions", key);
-        continue conditionsLoop;
+        // console.log("no viable actions found for condition, dropping node:", key);
+        entriesToAdd.length = 0;
+        nodeDead = true;
+        break conditionsLoop;
       }
-
+      let hasAtLeastOneViableAction = false;
       actionByEffectLoop: for (let action of actionsByEffect[key]) {
         // const repeats = minimumRepeatsToFulfillAtLeastOneCondition(conditions, action);
         const {repeats, resources} = repeatsToFulfillAllPossibleConditions(initialState, conditions, action);
         // const {repeats, resources} = repeatsToFulfillAllPossibleConditions(initialState, unmetConditions, action);
         const newCost = cost + (action.cost * repeats);
-        if ( action.once && plan.some(({action: {name}}) => name === action.name) ) {
-          console.log("skipping action due to once", action.name, plan);
+        if ( isSpent(action, plan) ) {
+          // console.log("skipping action due to once", action.name, plan);
           continue actionByEffectLoop;
         }
         if (newCost > maxCost) {
-          console.log("skipping action due to cost:", newCost, ">", maxCost);
+          // console.log("skipping action due to cost", action.name, newCost, maxCost);
           continue actionByEffectLoop;
         }
         if (repeats !== 1 ) {
@@ -758,26 +795,52 @@ export function* aStarPlanReversedGenerator<T extends State>(
         // const stateKey = JSON.stringify(buildTree(Object.entries(newConditions)));
         const stateKey = generateKeyFromResources(newPlan.map(({resources}) => resources).flat());
         // console.log("stateKey", stateKey);
-        // const doesnthave = !visited.has(stateKey);
-        // const isbetter = newCost < visited.get(stateKey)!;
-        // const existingCost = visited.get(stateKey);
-        // console.log({doesnthave, isbetter, newCost, existingCost, stateKey});
+        hasAtLeastOneViableAction = true;
         if (!visited.has(stateKey) || newCost < visited.get(stateKey)!) {
-          // console.log("adding to visited", stateKey, newCost);
-          // const unmetConditions = getUnmetConditions(newState, newConditions);
-          visited.set(stateKey, newCost);
-          openSet.enqueue({
-              conditions: newConditions, 
-              // state: newState, 
-              // plan: [{action, resources}, ...plan], 
-              plan: newPlan, 
-              // plan: [{action, resources: []}, ...plan], 
-              cost: newCost
-            },
-            newCost + estimateHeuristic(newConditions, items, costOfCondition) // your heuristic can be newCost + estimateHeuristic(…)
-          );
+          entriesToAdd.push({stateKey, newCost, entry: {conditions: newConditions, plan: newPlan, cost: newCost}});
         }
+        // if (!visited.has(stateKey) || newCost < visited.get(stateKey)!) {
+        //   // console.log("adding to visited", stateKey, newCost);
+        //   // const unmetConditions = getUnmetConditions(newState, newConditions);
+        //   visited.set(stateKey, newCost);
+        //   openSet.enqueue({
+        //       conditions: newConditions, 
+        //       // state: newState, 
+        //       // plan: [{action, resources}, ...plan], 
+        //       plan: newPlan, 
+        //       // plan: [{action, resources: []}, ...plan], 
+        //       cost: newCost
+        //     },
+        //     newCost + estimateHeuristic(newConditions, items, costOfCondition) // your heuristic can be newCost + estimateHeuristic(…)
+        //   );
+        // }
       }
+      // If no actions can fulfill this condition, we break out of the loop and empty the entriesToAdd array, as it's impossible to satisfy the goal
+      // from the current state with the available actions. There's no point in adding any new entries to the openSet if we can't fulfill one of the conditions.
+      if ( !hasAtLeastOneViableAction ) {
+        // console.log("no actions can fulfill condition", key, neededCond);
+        entriesToAdd.length = 0;
+        nodeDead = true;
+        break conditionsLoop;
+      }
+    }
+    // After checking all conditions, we add the new entries to the openSet if they are valid and not visited with a lower cost.
+    // If one of the conditions was impossible to fulfill, entriesToAdd will be empty and we won't add anything to the openSet.
+    if ( entriesToAdd.length > 0 ) {
+      for (const {stateKey, newCost, entry} of entriesToAdd) {
+        if ( !isNodeViable(entry.conditions, entry.plan) ) {
+          continue;
+        }
+        if (visited.has(stateKey) && newCost >= visited.get(stateKey)! ) {
+          continue;
+        }
+        visited.set(stateKey, newCost);
+        const priority = newCost + estimateHeuristic(entry.conditions, items, costOfCondition);
+        openSet.enqueue(entry, priority);
+      }
+    } 
+    else if (nodeDead) {
+      console.log("no viable actions found for at least one condition, dropping node");
     }
   }
   performance.mark("fail");
