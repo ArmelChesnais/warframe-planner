@@ -1,4 +1,5 @@
 import { Resource } from "./items/types";
+import { PriorityQueue } from "./PriorityQueue";
 
 type OnlyFirst<F, S> = F & {[Key in keyof Omit<S, keyof F>]?: never};
 
@@ -69,41 +70,6 @@ export type Action = {
   repeatable?: boolean;
   once?: boolean;
 };
-
-class PriorityQueue<T> {
-  queue: { item: T; priority: number }[];
-  sorted: boolean;
-  constructor() {
-    this.queue = [];
-    this.sorted = false;
-  }
-
-  enqueue(item:T, priority:number) {
-    this.queue.push({ item, priority });
-    this.sorted = false;
-    // this.queue.sort((a, b) => a.priority - b.priority); // Min-heap
-  }
-
-  noSortEnqueue(item:T, priority:number) {
-    this.queue.push({ item, priority });
-  }
-
-  dequeue():T|undefined {
-    if (!this.sorted) {
-      this.sort();
-      this.sorted = true;
-    }
-    return this.queue.shift()?.item;
-  }
-
-  sort() {
-    this.queue.sort((a, b) => a.priority - b.priority); // Min-heap
-  }
-
-  isEmpty():boolean {
-    return this.queue.length === 0;
-  }
-}
 
 function satisfies<T extends State>(state:T, conditions?:Conditions, consumes?:Consumes<T>):boolean {
   
